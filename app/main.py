@@ -1,79 +1,110 @@
-from fastapi import FastAPI, HTTPException, Response, status, Request
-from app.schemas import ItemCreate, ItemResponse, ItemUpdate
-from fastapi.responses import HTMLResponse
 from pathlib import Path
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="Demo FastAPI", version="0.1.0")
+from app.config import get_settings
+from app.database import Base, engine, get_db
+from app.models import Item
+from app.schemas import ItemCreate, ItemResponse, ItemUpdate
 
-# Base de données simulée en mémoire
-fake_db: dict[int, dict] = {
-    1: {"name": "Clavier", "price": 49.99, "is_offer": True},
-    2: {"name": "Souris", "price": 29.50, "is_offer": False},
-}
+# Récupération de la configuration
+settings = get_settings()
 
+# Crée la table dans Oracle si elle n'existe pas
+Base.metadata.create_all(bind=engine)
 
-# dossie fichiers HTML
+app = FastAPI(title=settings.app_name, version="0.1.0")
+
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+from sqlalchemy import text
+
+
 @app.get("/", response_class=HTMLResponse)
-def read_root(request: Request):
+def read_root(request: Request, db: Session = Depends(get_db)):
+    db_connected = False
+    try:
+        db.execute(text("SELECT 1 FROM DUAL"))
+        db_connected = True
+    except Exception:
+        db_connected = False
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"titre": "Bienvenue sur mon application"},
+        context={
+            "titre": f"Bienvenue sur {settings.app_name}",
+            "db_connected": db_connected,
+        },
     )
 
 
 @app.get("/items/", response_model=list[ItemResponse])
-def list_items(skip: int = 0, limit: int = 10):
-    """Récupère une liste d'items paginée."""
-    items = [{"id": k, **v} for k, v in fake_db.items()]
-    return items[skip : skip + limit]
+def list_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+    """Récupère la liste des items paginée depuis Oracle."""
+    return db.query(Item).offset(skip).limit(limit).all()
 
 
 @app.get("/items/{item_id}", response_model=ItemResponse)
-def read_item(item_id: int):
-    """Récupère un item spécifique par son ID."""
-    if item_id not in fake_db:
+def read_item(item_id: int, db: Session = Depends(get_db)):
+    """Récupère un item spécifique depuis Oracle."""
+    item = db.query(Item).filter(Item.id == item_id).first()
+    if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item non trouvé"
         )
-    return {"id": item_id, **fake_db[item_id]}
+    return item
 
 
 @app.post(
     "/items/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED
 )
-def create_item(item: ItemCreate):
-    """Crée un nouvel item validé par Pydantic."""
-    new_id = max(fake_db.keys(), default=0) + 1
-    fake_db[new_id] = item.model_dump()
-    return {"id": new_id, **fake_db[new_id]}
+def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
+    """Insère un nouvel item dans Oracle avec validation Pydantic."""
+    db_item = Item(**item_in.model_dump())
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
 
 
 @app.put("/items/{item_id}", response_model=ItemResponse)
-def update_item(item_id: int, item_update: ItemUpdate):
-    """Met à jour les champs d'un item existant."""
-    if item_id not in fake_db:
+def update_item(
+    item_id: int, item_update: ItemUpdate, db: Session = Depends(get_db)
+):
+    """Met à jour un item existant dans Oracle."""
+    db_item = db.query(Item).filter(Item.id == item_id).first()
+    if not db_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item non trouvé"
         )
 
-    # Récupère uniquement les champs renseignés dans la requête
     update_data = item_update.model_dump(exclude_unset=True)
-    fake_db[item_id].update(update_data)
+    for key, value in update_data.items():
+        setattr(db_item, key, value)
 
-    return {"id": item_id, **fake_db[item_id]}
+    db.commit()
+    db.refresh(db_item)
+    return db_item
 
 
 @app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(item_id: int):
-    """Supprime un item par son ID."""
-    if item_id not in fake_db:
+def delete_item(item_id: int, db: Session = Depends(get_db)):
+    """Supprime un item dans Oracle."""
+    db_item = db.query(Item).filter(Item.id == item_id).first()
+    if not db_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item non trouvé"
         )
-    del fake_db[item_id]
+    db.delete(db_item)
+    db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

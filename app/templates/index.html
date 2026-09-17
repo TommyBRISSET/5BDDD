@@ -6,18 +6,54 @@
     <style>
         body {
             font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .banner {
+            padding: 12px 20px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .banner-success {
+            background-color: #d4edda;
+            color: #155724;
+            border-bottom: 1px solid #c3e6cb;
+        }
+
+        .banner-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-bottom: 1px solid #f5c6cb;
+        }
+
+        .content {
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 80vh;
-            margin: 0;
+            height: calc(80vh - 45px);
         }
+
         h1 {
             color: #2c3e50;
         }
     </style>
 </head>
 <body>
-    <h1>{{ titre }}</h1>
+    {% if db_connected %}
+        <div class="banner banner-success">
+            ● Base de données Oracle : Connectée
+        </div>
+    {% else %}
+        <div class="banner banner-danger">
+            ▲ Base de données Oracle : Déconnectée ou inaccessible
+        </div>
+    {% endif %}
+
+    <div class="content">
+        <h1>{{ titre }}</h1>
+    </div>
 </body>
 </html>
