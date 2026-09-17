@@ -26,4 +26,4 @@ class User(Base):
         index=True,
     )
     username = Column(String(50), unique=True, index=True, nullable=False)
-    password = Column(String(100), nullable=False)
+    password = Column(String(255), nullable=False)

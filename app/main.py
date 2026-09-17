@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import jwt
 from jwt.exceptions import InvalidTokenError
+from pwdlib import PasswordHash
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
@@ -20,20 +21,26 @@ from app.schemas import (
     TokenResponse,
 )
 
-
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
+# Init outil de hache
+password_hash = PasswordHash.recommended()
+
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# OAuth2 pointe sur l'URL de connexion
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
-# Utilitaires JWT
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return password_hash.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    return password_hash.hash(password)
+
 def create_access_token(username: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {"sub": username, "exp": expire}
@@ -51,7 +58,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
         )
         username: str | None = payload.get("sub")
-        if username is None:
+        if not username:
             raise credentials_exception
     except InvalidTokenError:
         raise credentials_exception
@@ -61,14 +68,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-#============================== ROUTES ===========================================
 
+# ========================================== ROUTES ======================================================
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.get("/", response_class=HTMLResponse, tags=["Pages"])
+@app.get("/", response_class=HTMLResponse, status_code=status.HTTP_200_OK, tags=["Pages"])
 def read_root(request: Request, db: Session = Depends(get_db)):
     db_connected = False
     try:
@@ -86,15 +93,27 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         },
     )
 
-@app.post("/login", response_model=TokenResponse, tags=["Authentification"])
+@app.post(
+    "/login",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Authentification"],
+)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    """Vérifie user en base Oracle"""
+    """Authentifie un user"""
     user = db.query(User).filter(User.username == form_data.username).first()
 
-    if not user or user.password != form_data.password:
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Nom d'utilisateur ou mot de passe incorrect",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not verify_password(form_data.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Nom d'utilisateur ou mot de passe incorrect",
@@ -105,17 +124,31 @@ def login(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@app.get("/private", tags=["Authentification"])
+@app.get(
+    "/private",
+    status_code=status.HTTP_200_OK,
+    tags=["Authentification"],
+)
 def private_route(current_user: User = Depends(get_current_user)):
+    """Route nécessite un Bearer token ok"""
     return {"message": f"Bonjour {current_user.username}, accès autorisé à la zone privée."}
 
-
-@app.get("/items/", response_model=list[ItemResponse], tags=["Items"])
+@app.get(
+    "/items/",
+    response_model=list[ItemResponse],
+    status_code=status.HTTP_200_OK,
+    tags=["Items"],
+)
 def list_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     return db.query(Item).offset(skip).limit(limit).all()
 
 
-@app.get("/items/{item_id}", response_model=ItemResponse, tags=["Items"])
+@app.get(
+    "/items/{item_id}",
+    response_model=ItemResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Items"],
+)
 def read_item(item_id: int, db: Session = Depends(get_db)):
     item = db.query(Item).filter(Item.id == item_id).first()
     if not item:
@@ -125,7 +158,12 @@ def read_item(item_id: int, db: Session = Depends(get_db)):
     return item
 
 
-@app.post("/items/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED, tags=["Items"])
+@app.post(
+    "/items/",
+    response_model=ItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Items"],
+)
 def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
     db_item = Item(**item_in.model_dump())
     db.add(db_item)
@@ -134,7 +172,12 @@ def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
     return db_item
 
 
-@app.put("/items/{item_id}", response_model=ItemResponse, tags=["Items"])
+@app.put(
+    "/items/{item_id}",
+    response_model=ItemResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Items"],
+)
 def update_item(item_id: int, item_update: ItemUpdate, db: Session = Depends(get_db)):
     db_item = db.query(Item).filter(Item.id == item_id).first()
     if not db_item:
@@ -151,7 +194,11 @@ def update_item(item_id: int, item_update: ItemUpdate, db: Session = Depends(get
     return db_item
 
 
-@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Items"])
+@app.delete(
+    "/items/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Items"],
+)
 def delete_item(item_id: int, db: Session = Depends(get_db)):
     db_item = db.query(Item).filter(Item.id == item_id).first()
     if not db_item:
