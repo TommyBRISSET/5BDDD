@@ -93,6 +93,19 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         },
     )
 
+@app.get(
+    "/login-page",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Pages"],
+)
+def login_page(request: Request):
+    """Formulaire de connexion HTML."""
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+    )
+
 @app.post(
     "/login",
     response_model=TokenResponse,
@@ -131,7 +144,20 @@ def login(
 )
 def private_route(current_user: User = Depends(get_current_user)):
     """Route nécessite un Bearer token ok"""
-    return {"message": f"Bonjour {current_user.username}, accès autorisé à la zone privée."}
+    return {"message": f"Bonjour {current_user.username}"}
+
+@app.get(
+    "/dashboard",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Pages"],
+)
+def dashboard_page(request: Request):
+    """Affiche la page du tableau de bord."""
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+    )
 
 @app.get(
     "/items/",
