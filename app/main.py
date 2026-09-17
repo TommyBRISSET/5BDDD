@@ -22,7 +22,7 @@ from app.schemas import (
 )
 
 settings = get_settings()
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
