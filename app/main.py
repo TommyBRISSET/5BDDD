@@ -3,16 +3,17 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import Base, engine, get_db
 from app.models import Item
 from app.schemas import ItemCreate, ItemResponse, ItemUpdate
 
-# Récupération de la configuration
+# Récup config
 settings = get_settings()
 
-# Crée la table dans Oracle si elle n'existe pas
+# Crée table dans Oracle
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -24,9 +25,6 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-from sqlalchemy import text
 
 
 @app.get("/", response_class=HTMLResponse)

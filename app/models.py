@@ -14,3 +14,16 @@ class Item(Base):
     name = Column(String(100), nullable=False)
     price = Column(Float, nullable=False)
     is_offer = Column(Boolean, default=False, nullable=True)
+
+
+class User(Base):
+    __tablename__ = "app_users"
+
+    id = Column(
+        Integer,
+        Sequence("app_users_id_seq", start=1, increment=1),
+        primary_key=True,
+        index=True,
+    )
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    password = Column(String(100), nullable=False)
