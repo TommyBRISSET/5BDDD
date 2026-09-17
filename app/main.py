@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import Base, engine, get_db
+from app.database import get_db
 from app.models import Item, User
 from app.schemas import (
     ItemCreate,
@@ -22,11 +22,9 @@ from app.schemas import (
 )
 
 settings = get_settings()
-# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
-# Init outil de hache
 password_hash = PasswordHash.recommended()
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -38,24 +36,40 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password, hashed_password)
 
-def get_password_hash(password: str) -> str:
-    return password_hash.hash(password)
 
-def create_access_token(username: str) -> str:
+def get_oracle_roles(username: str, db: Session) -> list[str]:
+    """Récupère les rôles Oracle associés à l'utilisateur depuis vues système."""
+    query = text("""
+        SELECT granted_role 
+        FROM dba_role_privs 
+        WHERE grantee = UPPER(:username)
+    """)
+    try:
+        result = db.execute(query, {"username": username}).fetchall()
+        return [row[0] for row in result]
+    except Exception:
+        return []
+
+
+def create_access_token(username: str, roles: list[str]) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": username, "exp": expire}
+    payload = {
+        "sub": username,
+        "roles": roles,
+        "exp": expire,
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> User:
+def get_current_user_token_data(token: str = Depends(oauth2_scheme)) -> dict:
+    """Décode token et vérifie validité et expiration."""
     try:
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
+        return payload
     except ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -69,25 +83,19 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    username: str | None = payload.get("sub")
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalide : identifiant manquant",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
-    user = db.query(User).filter(User.username == username).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Utilisateur introuvable en base de données",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+def require_role(role_name: str):
+    """Vérifie utilisateur possède rôle Oracle dans son token."""
+    def role_checker(token_data: dict = Depends(get_current_user_token_data)):
+        user_roles = [r.upper() for r in token_data.get("roles", [])]
+        if role_name.upper() not in user_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Action refusée : privilège Oracle '{role_name.upper()}' requis.",
+            )
+        return token_data
+    return role_checker
 
-    return user
-
-# ========================================== ROUTES ======================================================
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -111,18 +119,15 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         },
     )
 
-@app.get(
-    "/login-page",
-    response_class=HTMLResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Pages"],
-)
+
+@app.get("/login-page", response_class=HTMLResponse, status_code=status.HTTP_200_OK, tags=["Pages"])
 def login_page(request: Request):
-    """Formulaire de connexion HTML."""
-    return templates.TemplateResponse(
-        request=request,
-        name="login.html",
-    )
+    return templates.TemplateResponse(request=request, name="login.html")
+
+
+@app.get("/dashboard", response_class=HTMLResponse, status_code=status.HTTP_200_OK, tags=["Pages"])
+def dashboard_page(request: Request):
+    return templates.TemplateResponse(request=request, name="dashboard.html")
 
 @app.post(
     "/login",
@@ -134,56 +139,45 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    """Authentifie un user"""
+    """1. Vérifie mdp dans app_users
+       2. Récupère rôles Oracle dans dba_role_privs
+       3. Délivre JWT"""
     user = db.query(User).filter(User.username == form_data.username).first()
 
-    if not user:
+    if not user or not verify_password(form_data.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Nom d'utilisateur ou mot de passe incorrect",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not verify_password(form_data.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nom d'utilisateur ou mot de passe incorrect",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Récupération rôles Oracle user
+    oracle_roles = get_oracle_roles(user.username, db)
 
-    token = create_access_token(username=user.username)
+    # Création token
+    token = create_access_token(username=user.username, roles=oracle_roles)
     return {"access_token": token, "token_type": "bearer"}
 
 
-@app.get(
-    "/private",
-    status_code=status.HTTP_200_OK,
-    tags=["Authentification"],
-)
-def private_route(current_user: User = Depends(get_current_user)):
-    """Route nécessite un Bearer token ok"""
-    return {"message": f"Bonjour {current_user.username}"}
-
-@app.get(
-    "/dashboard",
-    response_class=HTMLResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Pages"],
-)
-def dashboard_page(request: Request):
-    """Affiche la page du tableau de bord."""
-    return templates.TemplateResponse(
-        request=request,
-        name="dashboard.html",
-    )
+@app.get("/private", status_code=status.HTTP_200_OK, tags=["Authentification"])
+def private_route(token_data: dict = Depends(get_current_user_token_data)):
+    """Route accessible à utilisateur authentifié"""
+    username = token_data.get("sub")
+    roles = token_data.get("roles", [])
+    return {
+        "message": f"Bonjour {username}",
+        "roles_oracle": roles,
+    }
 
 @app.get(
     "/items/",
     response_model=list[ItemResponse],
     status_code=status.HTTP_200_OK,
     tags=["Items"],
+    dependencies=[Depends(get_current_user_token_data)],
 )
 def list_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+    """Lecture des items"""
     return db.query(Item).offset(skip).limit(limit).all()
 
 
@@ -192,6 +186,7 @@ def list_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     response_model=ItemResponse,
     status_code=status.HTTP_200_OK,
     tags=["Items"],
+    dependencies=[Depends(get_current_user_token_data)],
 )
 def read_item(item_id: int, db: Session = Depends(get_db)):
     item = db.query(Item).filter(Item.id == item_id).first()
@@ -207,8 +202,10 @@ def read_item(item_id: int, db: Session = Depends(get_db)):
     response_model=ItemResponse,
     status_code=status.HTTP_201_CREATED,
     tags=["Items"],
+    dependencies=[Depends(require_role("app_admin"))],
 )
 def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
+    """Création d'un item"""
     db_item = Item(**item_in.model_dump())
     db.add(db_item)
     db.commit()
@@ -221,8 +218,10 @@ def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
     response_model=ItemResponse,
     status_code=status.HTTP_200_OK,
     tags=["Items"],
+    dependencies=[Depends(require_role("app_admin"))],
 )
 def update_item(item_id: int, item_update: ItemUpdate, db: Session = Depends(get_db)):
+    """Mise à jour d'un item"""
     db_item = db.query(Item).filter(Item.id == item_id).first()
     if not db_item:
         raise HTTPException(
@@ -242,8 +241,10 @@ def update_item(item_id: int, item_update: ItemUpdate, db: Session = Depends(get
     "/items/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["Items"],
+    dependencies=[Depends(require_role("app_admin"))],
 )
 def delete_item(item_id: int, db: Session = Depends(get_db)):
+    """Suppression d'un item"""
     db_item = db.query(Item).filter(Item.id == item_id).first()
     if not db_item:
         raise HTTPException(
