@@ -1,19 +1,27 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import jwt
+from jwt.exceptions import InvalidTokenError
+
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import Base, engine, get_db
-from app.models import Item
-from app.schemas import ItemCreate, ItemResponse, ItemUpdate
+from app.models import Item, User
+from app.schemas import (
+    ItemCreate,
+    ItemResponse,
+    ItemUpdate,
+    TokenResponse,
+)
 
-# Récup config
+
 settings = get_settings()
-
-# Crée table dans Oracle
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -21,13 +29,46 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# OAuth2 pointe sur l'URL de connexion
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+
+# Utilitaires JWT
+def create_access_token(username: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    payload = {"sub": username, "exp": expire}
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token invalide ou expiré",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(
+            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
+        )
+        username: str | None = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except InvalidTokenError:
+        raise credentials_exception
+
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+#============================== ROUTES ===========================================
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse, tags=["Pages"])
 def read_root(request: Request, db: Session = Depends(get_db)):
     db_connected = False
     try:
@@ -45,16 +86,37 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         },
     )
 
+@app.post("/login", response_model=TokenResponse, tags=["Authentification"])
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """Vérifie user en base Oracle"""
+    user = db.query(User).filter(User.username == form_data.username).first()
 
-@app.get("/items/", response_model=list[ItemResponse])
+    if not user or user.password != form_data.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Nom d'utilisateur ou mot de passe incorrect",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = create_access_token(username=user.username)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/private", tags=["Authentification"])
+def private_route(current_user: User = Depends(get_current_user)):
+    return {"message": f"Bonjour {current_user.username}, accès autorisé à la zone privée."}
+
+
+@app.get("/items/", response_model=list[ItemResponse], tags=["Items"])
 def list_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    """Récupère la liste des items paginée depuis Oracle."""
     return db.query(Item).offset(skip).limit(limit).all()
 
 
-@app.get("/items/{item_id}", response_model=ItemResponse)
+@app.get("/items/{item_id}", response_model=ItemResponse, tags=["Items"])
 def read_item(item_id: int, db: Session = Depends(get_db)):
-    """Récupère un item spécifique depuis Oracle."""
     item = db.query(Item).filter(Item.id == item_id).first()
     if not item:
         raise HTTPException(
@@ -63,11 +125,8 @@ def read_item(item_id: int, db: Session = Depends(get_db)):
     return item
 
 
-@app.post(
-    "/items/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED
-)
+@app.post("/items/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED, tags=["Items"])
 def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
-    """Insère un nouvel item dans Oracle avec validation Pydantic."""
     db_item = Item(**item_in.model_dump())
     db.add(db_item)
     db.commit()
@@ -75,11 +134,8 @@ def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
     return db_item
 
 
-@app.put("/items/{item_id}", response_model=ItemResponse)
-def update_item(
-    item_id: int, item_update: ItemUpdate, db: Session = Depends(get_db)
-):
-    """Met à jour un item existant dans Oracle."""
+@app.put("/items/{item_id}", response_model=ItemResponse, tags=["Items"])
+def update_item(item_id: int, item_update: ItemUpdate, db: Session = Depends(get_db)):
     db_item = db.query(Item).filter(Item.id == item_id).first()
     if not db_item:
         raise HTTPException(
@@ -95,9 +151,8 @@ def update_item(
     return db_item
 
 
-@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Items"])
 def delete_item(item_id: int, db: Session = Depends(get_db)):
-    """Supprime un item dans Oracle."""
     db_item = db.query(Item).filter(Item.id == item_id).first()
     if not db_item:
         raise HTTPException(
