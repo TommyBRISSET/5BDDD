@@ -119,16 +119,6 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         },
     )
 
-
-@app.get("/login-page", response_class=HTMLResponse, status_code=status.HTTP_200_OK, tags=["Pages"])
-def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html")
-
-
-@app.get("/dashboard", response_class=HTMLResponse, status_code=status.HTTP_200_OK, tags=["Pages"])
-def dashboard_page(request: Request):
-    return templates.TemplateResponse(request=request, name="dashboard.html")
-
 @app.post(
     "/login",
     response_model=TokenResponse,

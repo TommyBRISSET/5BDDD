@@ -4,75 +4,27 @@
     <meta charset="UTF-8">
     <title>{{ titre }}</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-
-        .banner {
-            padding: 12px 20px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        .banner-success {
-            background-color: #d4edda;
-            color: #155724;
-            border-bottom: 1px solid #c3e6cb;
-        }
-
-        .banner-danger {
-            background-color: #f8d7da;
-            color: #721c24;
-            border-bottom: 1px solid #f5c6cb;
-        }
-
-        .content {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: calc(80vh - 45px);
-            gap: 20px;
-        }
-
-        h1 {
-            color: #2c3e50;
-            margin: 0;
-        }
-
-        .btn-login {
-            display: inline-block;
-            background-color: #2c3e50;
-            color: white;
-            text-decoration: none;
-            padding: 10px 24px;
-            border-radius: 6px;
-            font-weight: bold;
-            transition: background-color 0.2s ease;
-        }
-
-        .btn-login:hover {
-            background-color: #34495e;
-        }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f8f9fa; }
+        .banner { padding: 12px 20px; text-align: center; font-weight: bold; font-size: 14px; }
+        .banner-success { background-color: #d4edda; color: #155724; border-bottom: 1px solid #c3e6cb; }
+        .banner-danger { background-color: #f8d7da; color: #721c24; border-bottom: 1px solid #f5c6cb; }
+        .content { display: flex; flex-direction: column; justify-content: center; align-items: center; height: calc(80vh - 45px); gap: 20px; }
+        h1 { color: #2c3e50; margin: 0; }
+        .docs-link { color: #3498db; text-decoration: none; font-weight: bold; font-size: 18px; }
+        .docs-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     {% if db_connected %}
-        <div class="banner banner-success">
-            ● Base de données Oracle : Connectée
-        </div>
+        <div class="banner banner-success">● Base de données Oracle : Connectée</div>
     {% else %}
-        <div class="banner banner-danger">
-            ▲ Base de données Oracle : Déconnectée ou inaccessible
-        </div>
+        <div class="banner banner-danger">▲ Base de données Oracle : Déconnectée ou inaccessible</div>
     {% endif %}
 
     <div class="content">
         <h1>{{ titre }}</h1>
-        <a href="/login-page" class="btn-login">Se connecter</a>
+        <p>L'API est fonctionnelle. L'interface de test interactive est disponible ci-dessous :</p>
+        <a href="/docs" class="docs-link">Accéder à la documentation Swagger (Test de l'API)</a>
     </div>
 </body>
 </html>
