@@ -13,86 +13,55 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import Item, User
+from app.models import Author, Book, User, RentBook
 from app.schemas import (
-    ItemCreate,
-    ItemResponse,
-    ItemUpdate,
     TokenResponse,
+    AuthorCreate, AuthorResponse,
+    BookCreate, BookUpdate, BookResponse,
+    UserCreate, UserUpdate, UserResponse,
+    RentBookCreate, RentBookResponse
 )
 
 settings = get_settings()
-
 app = FastAPI(title=settings.app_name, version="0.1.0")
-
 password_hash = PasswordHash.recommended()
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password, hashed_password)
 
+def get_password_hash(password: str) -> str:
+    return password_hash.hash(password)
 
-def get_oracle_roles(username: str, db: Session) -> list[str]:
-    """Récupère les rôles Oracle associés à l'utilisateur depuis vues système."""
-    query = text("""
-        SELECT granted_role 
-        FROM dba_role_privs 
-        WHERE grantee = UPPER(:username)
-    """)
+def get_oracle_roles(surname: str, db: Session) -> list[str]:
+    query = text("SELECT granted_role FROM dba_role_privs WHERE grantee = UPPER(:username)")
     try:
-        result = db.execute(query, {"username": username}).fetchall()
-        return [row[0] for row in result]
+        return [row[0] for row in db.execute(query, {"username": surname}).fetchall()]
     except Exception:
         return []
 
-
 def create_access_token(username: str, roles: list[str]) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {
-        "sub": username,
-        "roles": roles,
-        "exp": expire,
-    }
+    payload = {"sub": username, "roles": roles, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
-
 def get_current_user_token_data(token: str = Depends(oauth2_scheme)) -> dict:
-    """Décode token et vérifie validité et expiration."""
     try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-        )
-        return payload
+        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Le token a expiré, veuillez vous reconnecter",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status_code=401, detail="Token expiré")
     except InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalide",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+        raise HTTPException(status_code=401, detail="Token invalide")
 
 def require_role(role_name: str):
-    """Vérifie utilisateur possède rôle Oracle dans son token."""
     def role_checker(token_data: dict = Depends(get_current_user_token_data)):
         user_roles = [r.upper() for r in token_data.get("roles", [])]
         if role_name.upper() not in user_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Action refusée : privilège Oracle '{role_name.upper()}' requis.",
-            )
+            raise HTTPException(status_code=403, detail=f"Privilège Oracle '{role_name.upper()}' requis.")
         return token_data
     return role_checker
 
