@@ -76,3 +76,17 @@ class UserResponse(UserBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RentBookCreate(BaseModel):
+    id_book: int
+
+
+class RentBookResponse(BaseModel):
+    id: int
+    id_book: int
+    id_user: int
+    dateBeginRen: datetime
+    dateEnd: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
