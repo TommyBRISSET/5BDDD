@@ -96,6 +96,46 @@ def read_users_me(token_data: dict = Depends(get_current_user_token_data)):
     return {"email": token_data.get("sub"), "roles_oracle": token_data.get("roles", [])}
 
 
+@app.get("/books/", response_model=list[BookResponse], tags=["Books"], dependencies=[Depends(get_current_user_token_data)])
+def get_books(db: Session = Depends(get_db), token_data: dict = Depends(get_current_user_token_data)):
+    books = db.query(Book).all()
+    if "APP_ADMIN" not in [r.upper() for r in token_data.get("roles", [])]:
+        for book in books: book.stockTot = 0
+    return books
+
+@app.get("/books/{book_id}", response_model=BookResponse, tags=["Books"], dependencies=[Depends(get_current_user_token_data)])
+def get_book(book_id: int, db: Session = Depends(get_db), token_data: dict = Depends(get_current_user_token_data)):
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book: raise HTTPException(status_code=404, detail="Livre non trouvé")
+    if "APP_ADMIN" not in [r.upper() for r in token_data.get("roles", [])]: book.stockTot = 0
+    return book
+
+@app.post("/books/", response_model=BookResponse, status_code=201, tags=["Books"], dependencies=[Depends(require_role("app_admin"))])
+def create_book(book_in: BookCreate, db: Session = Depends(get_db)):
+    db_book = Book(**book_in.model_dump())
+    db.add(db_book)
+    db.commit()
+    db.refresh(db_book)
+    return db_book
+
+@app.put("/books/{book_id}", response_model=BookResponse, tags=["Books"], dependencies=[Depends(require_role("app_admin"))])
+def update_book(book_id: int, book_in: BookUpdate, db: Session = Depends(get_db)):
+    db_book = db.query(Book).filter(Book.id == book_id).first()
+    if not db_book: raise HTTPException(status_code=404, detail="Livre non trouvé")
+    for key, value in book_in.model_dump(exclude_unset=True).items(): setattr(db_book, key, value)
+    db.commit()
+    db.refresh(db_book)
+    return db_book
+
+@app.delete("/books/{book_id}", status_code=204, tags=["Books"], dependencies=[Depends(require_role("app_admin"))])
+def delete_book(book_id: int, db: Session = Depends(get_db)):
+    db_book = db.query(Book).filter(Book.id == book_id).first()
+    if not db_book: raise HTTPException(status_code=404, detail="Livre non trouvé")
+    db.delete(db_book)
+    db.commit()
+    return Response(status_code=204)
+
+
 @app.post("/rents/", response_model=RentBookResponse, status_code=201, tags=["Emprunts"])
 def borrow_book(rent_in: RentBookCreate, db: Session = Depends(get_db),
                 token_data: dict = Depends(get_current_user_token_data)):
