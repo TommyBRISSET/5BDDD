@@ -94,3 +94,49 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @app.get("/private", tags=["Authentification"])
 def read_users_me(token_data: dict = Depends(get_current_user_token_data)):
     return {"email": token_data.get("sub"), "roles_oracle": token_data.get("roles", [])}
+
+
+@app.post("/rents/", response_model=RentBookResponse, status_code=201, tags=["Emprunts"])
+def borrow_book(rent_in: RentBookCreate, db: Session = Depends(get_db),
+                token_data: dict = Depends(get_current_user_token_data)):
+    user = db.query(User).filter(User.email == token_data.get("sub")).first()
+    book = db.query(Book).filter(Book.id == rent_in.id_book).first()
+
+    if not book: raise HTTPException(status_code=404, detail="Livre non trouvé")
+    if book.stock <= 0: raise HTTPException(status_code=400, detail="Ce livre n'est plus disponible.")
+
+    book.stock -= 1
+    db_rent = RentBook(id_book=book.id, id_user=user.id)
+    db.add(db_rent)
+    db.commit()
+    db.refresh(db_rent)
+    return db_rent
+
+
+@app.put("/rents/{rent_id}/return", response_model=RentBookResponse, tags=["Emprunts"])
+def return_book(rent_id: int, db: Session = Depends(get_db), token_data: dict = Depends(get_current_user_token_data)):
+    user = db.query(User).filter(User.email == token_data.get("sub")).first()
+    rent = db.query(RentBook).filter(RentBook.id == rent_id).first()
+
+    if not rent: raise HTTPException(status_code=404, detail="Emprunt introuvable")
+    if rent.id_user != user.id: raise HTTPException(status_code=403,
+                                                    detail="Vous ne pouvez pas rendre un livre que vous n'avez pas emprunté.")
+    if rent.dateEnd is not None: raise HTTPException(status_code=400, detail="Ce livre a déjà été rendu.")
+
+    rent.dateEnd = datetime.now()
+    rent.book.stock += 1
+    db.commit()
+    db.refresh(rent)
+    return rent
+
+
+@app.get("/rents/me", response_model=list[RentBookResponse], tags=["Emprunts"])
+def get_my_rents(db: Session = Depends(get_db), token_data: dict = Depends(get_current_user_token_data)):
+    user = db.query(User).filter(User.email == token_data.get("sub")).first()
+    return db.query(RentBook).filter(RentBook.id_user == user.id).all()
+
+
+@app.get("/rents/all", response_model=list[RentBookResponse], tags=["Emprunts"],
+         dependencies=[Depends(require_role("app_admin"))])
+def get_all_rents(db: Session = Depends(get_db)):
+    return db.query(RentBook).all()
