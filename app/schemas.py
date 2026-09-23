@@ -51,3 +51,28 @@ class BookResponse(BookBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserBase(BaseModel):
+    surname: str
+    family_name: str
+    email: EmailStr
+    blacklist: bool = False
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserUpdate(BaseModel):
+    surname: Optional[str] = None
+    family_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    blacklist: Optional[bool] = None
+    password: Optional[str] = None
+
+
+class UserResponse(UserBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
