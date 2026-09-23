@@ -67,148 +67,30 @@ def require_role(role_name: str):
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return Response(status_code=204)
 
-
-@app.get("/", response_class=HTMLResponse, status_code=status.HTTP_200_OK, tags=["Pages"])
+@app.get("/", response_class=HTMLResponse, tags=["Pages"])
 def read_root(request: Request, db: Session = Depends(get_db)):
     db_connected = False
     try:
         db.execute(text("SELECT 1 FROM DUAL"))
         db_connected = True
     except Exception:
-        db_connected = False
+        pass
+    return templates.TemplateResponse(request=request, name="index.html", context={"titre": settings.app_name, "db_connected": db_connected})
 
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "titre": f"Bienvenue sur {settings.app_name}",
-            "db_connected": db_connected,
-        },
-    )
-
-@app.post(
-    "/login",
-    response_model=TokenResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Authentification"],
-)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
-    """1. Vérifie mdp dans app_users
-       2. Récupère rôles Oracle dans dba_role_privs
-       3. Délivre JWT"""
-    user = db.query(User).filter(User.username == form_data.username).first()
-
+@app.post("/login", response_model=TokenResponse, tags=["Authentification"])
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nom d'utilisateur ou mot de passe incorrect",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    if user.blacklist:
+        raise HTTPException(status_code=403, detail="Votre compte a été placé sur liste noire.")
 
-    # Récupération rôles Oracle user
-    oracle_roles = get_oracle_roles(user.username, db)
-
-    # Création token
-    token = create_access_token(username=user.username, roles=oracle_roles)
+    oracle_roles = get_oracle_roles(user.surname.lower(), db)
+    token = create_access_token(username=user.email, roles=oracle_roles)
     return {"access_token": token, "token_type": "bearer"}
 
-
-@app.get("/private", status_code=status.HTTP_200_OK, tags=["Authentification"])
-def private_route(token_data: dict = Depends(get_current_user_token_data)):
-    """Route accessible à utilisateur authentifié"""
-    username = token_data.get("sub")
-    roles = token_data.get("roles", [])
-    return {
-        "message": f"Bonjour {username}",
-        "roles_oracle": roles,
-    }
-
-@app.get(
-    "/items/",
-    response_model=list[ItemResponse],
-    status_code=status.HTTP_200_OK,
-    tags=["Items"],
-    dependencies=[Depends(get_current_user_token_data)],
-)
-def list_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    """Lecture des items"""
-    return db.query(Item).offset(skip).limit(limit).all()
-
-
-@app.get(
-    "/items/{item_id}",
-    response_model=ItemResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Items"],
-    dependencies=[Depends(get_current_user_token_data)],
-)
-def read_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(Item).filter(Item.id == item_id).first()
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Item non trouvé"
-        )
-    return item
-
-
-@app.post(
-    "/items/",
-    response_model=ItemResponse,
-    status_code=status.HTTP_201_CREATED,
-    tags=["Items"],
-    dependencies=[Depends(require_role("app_admin"))],
-)
-def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
-    """Création d'un item"""
-    db_item = Item(**item_in.model_dump())
-    db.add(db_item)
-    db.commit()
-    db.refresh(db_item)
-    return db_item
-
-
-@app.put(
-    "/items/{item_id}",
-    response_model=ItemResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Items"],
-    dependencies=[Depends(require_role("app_admin"))],
-)
-def update_item(item_id: int, item_update: ItemUpdate, db: Session = Depends(get_db)):
-    """Mise à jour d'un item"""
-    db_item = db.query(Item).filter(Item.id == item_id).first()
-    if not db_item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Item non trouvé"
-        )
-
-    update_data = item_update.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(db_item, key, value)
-
-    db.commit()
-    db.refresh(db_item)
-    return db_item
-
-
-@app.delete(
-    "/items/{item_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    tags=["Items"],
-    dependencies=[Depends(require_role("app_admin"))],
-)
-def delete_item(item_id: int, db: Session = Depends(get_db)):
-    """Suppression d'un item"""
-    db_item = db.query(Item).filter(Item.id == item_id).first()
-    if not db_item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Item non trouvé"
-        )
-    db.delete(db_item)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@app.get("/private", tags=["Authentification"])
+def read_users_me(token_data: dict = Depends(get_current_user_token_data)):
+    return {"email": token_data.get("sub"), "roles_oracle": token_data.get("roles", [])}
