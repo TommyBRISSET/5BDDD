@@ -180,3 +180,37 @@ def get_my_rents(db: Session = Depends(get_db), token_data: dict = Depends(get_c
          dependencies=[Depends(require_role("app_admin"))])
 def get_all_rents(db: Session = Depends(get_db)):
     return db.query(RentBook).all()
+
+
+@app.get("/users/", response_model=list[UserResponse], tags=["Utilisateurs"],
+         dependencies=[Depends(require_role("app_admin"))])
+def get_users(db: Session = Depends(get_db)):
+    return db.query(User).all()
+
+
+@app.post("/users/", response_model=UserResponse, status_code=201, tags=["Utilisateurs"],
+          dependencies=[Depends(require_role("app_admin"))])
+def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
+    user_data = user_in.model_dump()
+    user_data["password"] = get_password_hash(user_in.password)
+    db_user = User(**user_data)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+@app.put("/users/{user_id}", response_model=UserResponse, tags=["Utilisateurs"],
+         dependencies=[Depends(require_role("app_admin"))])
+def update_user(user_id: int, user_in: UserUpdate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user: raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+    update_data = user_in.model_dump(exclude_unset=True)
+    if "password" in update_data:
+        update_data["password"] = get_password_hash(update_data["password"])
+
+    for key, value in update_data.items(): setattr(db_user, key, value)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
