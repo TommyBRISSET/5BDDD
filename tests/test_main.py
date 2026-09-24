@@ -52,3 +52,31 @@ def test_expired_token():
     res = client.get("/private", headers={"Authorization": f"Bearer {expired_token}"})
     with pytest.raises(httpx.HTTPStatusError):
         res.raise_for_status()
+
+def test_rbac_user_cannot_create_users(user_token):
+    """TEST 4 : Bob (APP_USER) ne peut pas créer de nouveaux utilisateurs."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    payload = {"surname": "Hack", "family_name": "Er", "email": "hack@hacker.com", "password": "123"}
+
+    res = client.post("/users/", json=payload, headers=headers)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+
+def test_total_stock_hidden_for_user(user_token):
+    """TEST 5 : Règle métier - Bob ne doit pas voir le stock total des livres."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.get("/books/", headers=headers)
+    res.raise_for_status()
+
+    books = res.json()
+    for book in books:
+        assert book["stockTot"] == 0
+
+
+def test_total_stock_visible_for_admin(admin_token):
+    """TEST 6 : Règle métier - Alice doit pouvoir voir le vrai stock total (si des livres existent)."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    res = client.get("/books/", headers=headers)
+    res.raise_for_status()
