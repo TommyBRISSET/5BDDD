@@ -106,3 +106,64 @@ def test_admin_access_all_rents(admin_token):
     res = client.get("/rents/all", headers=headers)
     res.raise_for_status()
     assert isinstance(res.json(), list)
+
+def test_login_invalid_credentials():
+    """TEST 10 : Une tentative de connexion avec un mauvais mot de passe est rejetée."""
+    res = client.post("/login", data={"username": "bob@user.com", "password": "wrongpassword"})
+    # L'API doit lever une 401 Unauthorized
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+
+def test_admin_can_get_all_users(admin_token):
+    """TEST 11 : Alice (APP_ADMIN) a le droit de lister tous les utilisateurs."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    res = client.get("/users/", headers=headers)
+    res.raise_for_status()
+
+    users = res.json()
+    assert isinstance(users, list)
+    assert len(users) >= 2
+
+
+def test_user_can_access_own_rents(user_token):
+    """TEST 12 : Bob (APP_USER) peut consulter son propre historique d'emprunts avec succès."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.get("/rents/me", headers=headers)
+    res.raise_for_status()
+
+    rents = res.json()
+    assert isinstance(rents, list)
+
+
+def test_rbac_user_cannot_access_all_rents(user_token):
+    """TEST 13 : Bob (APP_USER) tente d'accéder à la supervision totale des emprunts (Bloqué)."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.get("/rents/all", headers=headers)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+
+def test_rbac_user_cannot_create_book(user_token):
+    """TEST 14 : Bob (APP_USER) tente d'ajouter un livre au catalogue (Bloqué)."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    payload = {
+        "name": "Livre Interdit",
+        "stock": 5,
+        "stockTot": 5,
+        "id_author": 1
+    }
+    res = client.post("/books/", json=payload, headers=headers)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+
+def test_rbac_user_cannot_delete_book(user_token):
+    """TEST 15 : Bob (APP_USER) tente de supprimer un livre (Bloqué)."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.delete("/books/1", headers=headers)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
