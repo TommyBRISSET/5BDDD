@@ -80,3 +80,29 @@ def test_total_stock_visible_for_admin(admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     res = client.get("/books/", headers=headers)
     res.raise_for_status()
+
+
+def test_borrow_nonexistent_book(user_token):
+    """TEST 7 : Emprunter un livre qui n'existe pas doit être bloqué par l'API."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.post("/rents/", json={"id_book": 99999}, headers=headers)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+
+def test_return_nonexistent_rent(user_token):
+    """TEST 8 : Rendre un emprunt fantôme doit être bloqué."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.put("/rents/99999/return", headers=headers)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+
+def test_admin_access_all_rents(admin_token):
+    """TEST 9 : Alice peut consulter la supervision totale des emprunts."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    res = client.get("/rents/all", headers=headers)
+    res.raise_for_status()
+    assert isinstance(res.json(), list)
