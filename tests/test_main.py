@@ -167,3 +167,49 @@ def test_rbac_user_cannot_delete_book(user_token):
 
     with pytest.raises(httpx.HTTPStatusError):
         res.raise_for_status()
+
+def test_business_rules_borrow_return_cycle(admin_token, user_token):
+    """TEST 16 : Validation du cycle complet d'emprunt et de retour (Règles métier)."""
+    headers_admin = {"Authorization": f"Bearer {admin_token}"}
+    headers_user = {"Authorization": f"Bearer {user_token}"}
+
+    new_author = client.post(
+        "/authors/",
+        json={"surname": "Victor", "family_name": "Hugo"},
+        headers=headers_admin
+    )
+    new_author.raise_for_status()
+    author_id = new_author.json()["id"]
+
+    new_book = client.post(
+        "/books/",
+        json={"name": "Les Misérables", "stock": 1, "stockTot": 1, "id_author": author_id},
+        headers=headers_admin
+    )
+    new_book.raise_for_status()
+    book_id = new_book.json()["id"]
+
+    # (Règle 1 : Le stock baisse)
+    rent = client.post("/rents/", json={"id_book": book_id}, headers=headers_user)
+    rent.raise_for_status()
+    rent_id = rent.json()["id"]
+
+    book_check = client.get(f"/books/{book_id}", headers=headers_admin).json()
+    assert book_check["stock"] == 0
+
+    # (Règle 3 : Stock à 0)
+    rent_fail = client.post("/rents/", json={"id_book": book_id}, headers=headers_user)
+    with pytest.raises(httpx.HTTPStatusError):
+        rent_fail.raise_for_status()
+
+    # (Règle 4 : Seul l'emprunteur rend son livre)
+    return_fail = client.put(f"/rents/{rent_id}/return", headers=headers_admin)
+    with pytest.raises(httpx.HTTPStatusError):
+        return_fail.raise_for_status()
+
+    # (Règle 2 : Le stock remonte)
+    return_ok = client.put(f"/rents/{rent_id}/return", headers=headers_user)
+    return_ok.raise_for_status()
+
+    book_check_final = client.get(f"/books/{book_id}", headers=headers_admin).json()
+    assert book_check_final["stock"] == 1

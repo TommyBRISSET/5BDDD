@@ -49,6 +49,7 @@ def create_access_token(username: str, roles: list[str]) -> str:
     payload = {"sub": username, "roles": roles, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
+
 def get_current_user_token_data(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> dict:
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
@@ -62,6 +63,12 @@ def get_current_user_token_data(token: str = Depends(oauth2_scheme), db: Session
         raise HTTPException(
             status_code=401,
             detail="L'utilisateur associé à ce token n'existe plus en base de données."
+        )
+
+    if user.blacklist:
+        raise HTTPException(
+            status_code=403,
+            detail="Votre compte est sur liste noire. Accès révoqué."
         )
 
     return payload
@@ -141,6 +148,57 @@ def delete_book(book_id: int, db: Session = Depends(get_db)):
     db_book = db.query(Book).filter(Book.id == book_id).first()
     if not db_book: raise HTTPException(status_code=404, detail="Livre non trouvé")
     db.delete(db_book)
+    db.commit()
+    return Response(status_code=204)
+
+@app.get("/authors/", response_model=list[AuthorResponse], tags=["Authors"],
+         dependencies=[Depends(get_current_user_token_data)])
+def get_authors(db: Session = Depends(get_db)):
+    return db.query(Author).all()
+
+
+@app.get("/authors/{author_id}", response_model=AuthorResponse, tags=["Authors"],
+         dependencies=[Depends(get_current_user_token_data)])
+def get_author(author_id: int, db: Session = Depends(get_db)):
+    author = db.query(Author).filter(Author.id == author_id).first()
+    if not author:
+        raise HTTPException(status_code=404, detail="Auteur non trouvé")
+    return author
+
+
+@app.post("/authors/", response_model=AuthorResponse, status_code=201, tags=["Authors"],
+          dependencies=[Depends(require_role("app_admin"))])
+def create_author(author_in: AuthorCreate, db: Session = Depends(get_db)):
+    db_author = Author(**author_in.model_dump())
+    db.add(db_author)
+    db.commit()
+    db.refresh(db_author)
+    return db_author
+
+
+@app.put("/authors/{author_id}", response_model=AuthorResponse, tags=["Authors"],
+         dependencies=[Depends(require_role("app_admin"))])
+def update_author(author_id: int, author_in: AuthorCreate, db: Session = Depends(get_db)):
+    db_author = db.query(Author).filter(Author.id == author_id).first()
+    if not db_author:
+        raise HTTPException(status_code=404, detail="Auteur non trouvé")
+
+    update_data = author_in.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_author, key, value)
+
+    db.commit()
+    db.refresh(db_author)
+    return db_author
+
+
+@app.delete("/authors/{author_id}", status_code=204, tags=["Authors"],
+            dependencies=[Depends(require_role("app_admin"))])
+def delete_author(author_id: int, db: Session = Depends(get_db)):
+    db_author = db.query(Author).filter(Author.id == author_id).first()
+    if not db_author:
+        raise HTTPException(status_code=404, detail="Auteur non trouvé")
+    db.delete(db_author)
     db.commit()
     return Response(status_code=204)
 
