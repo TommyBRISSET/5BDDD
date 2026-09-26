@@ -168,8 +168,38 @@ def test_rbac_user_cannot_delete_book(user_token):
     with pytest.raises(httpx.HTTPStatusError):
         res.raise_for_status()
 
+def test_admin_can_create_author(admin_token):
+    """TEST 16 : Alice (APP_ADMIN) peut créer un auteur."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    payload = {"surname": "Emile", "family_name": "Zola"}
+    res = client.post("/authors/", json=payload, headers=headers)
+    res.raise_for_status()
+    assert res.json()["surname"] == "Emile"
+
+def test_user_cannot_create_author(user_token):
+    """TEST 17 : Bob (APP_USER) ne peut pas créer un auteur (Bloqué)."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    payload = {"surname": "Albert", "family_name": "Camus"}
+    res = client.post("/authors/", json=payload, headers=headers)
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
+def test_get_authors(user_token):
+    """TEST 18 : Bob (APP_USER) peut consulter la liste des auteurs."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.get("/authors/", headers=headers)
+    res.raise_for_status()
+    assert isinstance(res.json(), list)
+
+def test_user_cannot_delete_author(user_token):
+    """TEST 19 : Bob (APP_USER) ne peut pas supprimer un auteur (Bloqué)."""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    res = client.delete("/authors/1", headers=headers)
+    with pytest.raises(httpx.HTTPStatusError):
+        res.raise_for_status()
+
 def test_business_rules_borrow_return_cycle(admin_token, user_token):
-    """TEST 16 : Validation du cycle complet d'emprunt et de retour (Règles métier)."""
+    """TEST 20 : Validation du cycle complet d'emprunt et de retour (Règles métier)."""
     headers_admin = {"Authorization": f"Bearer {admin_token}"}
     headers_user = {"Authorization": f"Bearer {user_token}"}
 

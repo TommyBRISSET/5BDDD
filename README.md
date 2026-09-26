@@ -97,7 +97,7 @@ L'API et la documentation Swagger sont accessibles à l'adresse : http://127.0.0
 ---
 
 ## 5. Tests automatisés (Pytest)
-Le projet inclut une suite de 15 tests automatisés vérifiant la validité des tokens JWT, l'application du contrôle d'accès (RBAC) et la logique métier des stocks et emprunts.
+Le projet inclut une suite de 20 tests automatisés vérifiant la validité des tokens JWT, l'application du contrôle d'accès (RBAC) et la logique métier des stocks et emprunts.
 
 Exécution de la suite de tests :
 ```powershell
