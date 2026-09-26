@@ -49,13 +49,22 @@ def create_access_token(username: str, roles: list[str]) -> str:
     payload = {"sub": username, "roles": roles, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
-def get_current_user_token_data(token: str = Depends(oauth2_scheme)) -> dict:
+def get_current_user_token_data(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> dict:
     try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expiré")
     except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token invalide")
+
+    user = db.query(User).filter(User.email == payload.get("sub")).first()
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="L'utilisateur associé à ce token n'existe plus en base de données."
+        )
+
+    return payload
 
 def require_role(role_name: str):
     def role_checker(token_data: dict = Depends(get_current_user_token_data)):
