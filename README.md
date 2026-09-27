@@ -43,7 +43,12 @@ Le processus d'initialisation (IaC) sépare la création de la structure de donn
 ## 3. Prérequis
 
 - **Python** : 3.10 ou supérieur.
-- **Oracle Database** : Instance fonctionnelle et accessible (ex: localhost:1521, service FREEPDB1).
+- **Oracle Database** : Instance fonctionnelle et accessible (ex: `localhost:1521`, service `FREEPDB1`).
+
+> **Option Docker :** Vous pouvez lancer rapidement une instance Oracle Database via Docker avec la commande suivante :
+> ```powershell
+> docker run -d --name oracle23c -p 1521:1521 -e ORACLE_PASSWORD=mot_de_passe container-registry.oracle.com/database/free:latest
+> ```
 
 ---
 

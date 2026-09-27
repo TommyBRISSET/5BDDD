@@ -3,6 +3,7 @@ from sqlalchemy import text
 
 
 def run_init():
+    """Initialise les séquences, rôles, privilèges et comptes de test Oracle."""
     with engine.connect() as conn:
         seqs = ["authors_id_seq", "books_id_seq", "app_users_id_seq", "rent_books_id_seq"]
         for seq in seqs:

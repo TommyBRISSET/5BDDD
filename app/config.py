@@ -20,4 +20,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Retourne la configuration globale mise en cache."""
     return Settings()

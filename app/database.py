@@ -6,7 +6,7 @@ settings = get_settings()
 
 engine = create_engine(
     settings.database_url,
-    pool_pre_ping=True,  # Vérifie connexion toujours active
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -15,7 +15,7 @@ Base = declarative_base()
 
 
 def get_db():
-    """Dépendance FastAPI fournissant une session SQLAlchemy par requête."""
+    """Fournit une session de base de données SQLAlchemy."""
     db = SessionLocal()
     try:
         yield db
