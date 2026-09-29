@@ -45,10 +45,11 @@ Le processus d'initialisation (IaC) sépare la création de la structure de donn
 - **Python** : 3.10 ou supérieur.
 - **Oracle Database** : Instance fonctionnelle et accessible (ex: `localhost:1521`, service `FREEPDB1`).
 
-> **Option Docker :** Vous pouvez lancer rapidement une instance Oracle Database via Docker avec la commande suivante :
+> **Option Docker (Oracle Database 23c Free) :** Vous pouvez lancer une instance Oracle Database via Docker avec la commande suivante :
 > ```powershell
 > docker run -d --name oracle23c -p 1521:1521 -e ORACLE_PASSWORD=mot_de_passe container-registry.oracle.com/database/free:latest
 > ```
+> *(Patientez 5 minutes après le lancement pour que la base et le service `FREEPDB1` soient complètement initialisés).*
 
 ---
 
@@ -64,9 +65,36 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### 4.2. Variables d'environnement
+### 4.2. Configuration du schéma et de l'utilisateur Oracle applicatif
 
-Création du fichier .env à la racine à partir de l'exemple fourni :
+Pour des raisons de sécurité, nous n'utilisons pas le compte d'administration `SYS` pour faire fonctionner l'application. Créez un utilisateur applicatif dédié (ex: `test`) dans la base (`FREEPDB1`) :
+
+1. Connectez-vous avec `sqlplus` dans le conteneur en tant que `SYS` :
+```powershell
+docker exec -it oracle23c sqlplus sys/mot_de_passe@localhost:1521/FREEPDB1 as sysdba
+```
+
+2. Exécutez les instructions SQL suivantes pour créer l'utilisateur et lui attribuer les droits nécessaires :
+```sql
+-- Création de l'utilisateur applicatif
+CREATE USER test IDENTIFIED BY "mot_de_passe"
+  DEFAULT TABLESPACE users
+  QUOTA UNLIMITED ON users;
+
+-- Privilèges de base et création des objets
+GRANT CONNECT, RESOURCE, CREATE VIEW, CREATE SEQUENCE, CREATE TABLE TO test;
+
+-- Privilèges pour la gestion dynamique des rôles et l'interrogation du catalogue (RBAC)
+GRANT CREATE ROLE, DROP ANY ROLE, GRANT ANY ROLE TO test;
+GRANT CREATE USER, DROP USER, GRANT ANY PRIVILEGE TO test;
+GRANT SELECT_CATALOG_ROLE TO test;
+
+EXIT;
+```
+
+### 4.3. Variables d'environnement
+
+Création du fichier `.env` à la racine à partir de l'exemple fourni (`.env.example`) :
 ```powershell
 APP_NAME="Projet FastAPI"
 DEBUG=True
@@ -78,7 +106,7 @@ JWT_ALGORITHM="HS256"
 JWT_EXPIRE_MINUTES=30
 ```
 
-### 4.3. Initialisation de la base de données
+### 4.4. Initialisation de la base de données
 Le déploiement de la base s'effectue en deux étapes pour garantir l'ordre de création des objets dans Oracle.
 
 **Étape 1 :** Création des tables et séquences (Alembic)
@@ -90,9 +118,9 @@ alembic upgrade head
 ```powershell
 python -m app.roles.init_roles
 ```
-_Note : Ce script configure les rôles app_user et app_admin, applique les privilèges (GRANT) et crée les comptes de test._
+_Note : Ce script configure les rôles `app_user` et `app_admin`, applique les privilèges (`GRANT`) et crée les comptes de test._
 
-### 4.4. Lancement du serveur
+### 4.5. Lancement du serveur
 ```powershell
 uvicorn app.main:app --reload
 ```
