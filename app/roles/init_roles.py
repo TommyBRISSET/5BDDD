@@ -28,11 +28,11 @@ def run_init():
         conn.execute(text("BEGIN EXECUTE IMMEDIATE 'DROP USER alice CASCADE'; EXCEPTION WHEN OTHERS THEN NULL; END;"))
         conn.execute(text("BEGIN EXECUTE IMMEDIATE 'DROP USER bob CASCADE'; EXCEPTION WHEN OTHERS THEN NULL; END;"))
 
-        conn.execute(text('CREATE USER alice IDENTIFIED BY "SecretAlice2026"'))
+        conn.execute(text('CREATE USER alice IDENTIFIED BY "secret"'))
         conn.execute(text("GRANT CREATE SESSION TO alice"))
         conn.execute(text("GRANT app_admin TO alice"))
 
-        conn.execute(text('CREATE USER bob IDENTIFIED BY "SecretBob2026"'))
+        conn.execute(text('CREATE USER bob IDENTIFIED BY "secret"'))
         conn.execute(text("GRANT CREATE SESSION TO bob"))
         conn.execute(text("GRANT app_user TO bob"))
 
@@ -43,7 +43,7 @@ def run_init():
             VALUES (app_users_id_seq.NEXTVAL, :surname, :family_name, :email, :password, 0)
         """
 
-        hashed_pwd = "$argon2id$v=19$m=65536,t=3,p=4$tBZ649K/fQpGoikCPalpRw$yZBmJgF7Eoyh4mjMnAoKf+WfwA9dPlybwPWpDB+S/W0"
+        hashed_pwd = "$argon2id$v=19$m=65536,t=3,p=4$EuY07L8VJI569k/lxgOjug$BpXCxz6hCVRRXQ2epPlB+5WxwaEk6ISkqFwI9wLGF6o"
 
         conn.execute(text(insert_sql),
                      {"surname": "Alice", "family_name": "Admin", "email": "alice@admin.com", "password": hashed_pwd})

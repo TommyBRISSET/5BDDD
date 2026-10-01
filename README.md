@@ -47,7 +47,7 @@ Le processus d'initialisation (IaC) sépare la création de la structure de donn
 
 > **Option Docker (Oracle Database 23c Free) :** Vous pouvez lancer une instance Oracle Database via Docker avec la commande suivante :
 > ```powershell
-> docker run -d --name oracle23c -p 1521:1521 -e ORACLE_PASSWORD=mot_de_passe container-registry.oracle.com/database/free:latest
+> docker run -d --name oracle23c -p 1521:1521 -e ORACLE_PWD=mot_de_passe container-registry.oracle.com/database/free:latest
 > ```
 > *(Patientez 5 minutes après le lancement pour que la base et le service `FREEPDB1` soient complètement initialisés).*
 
@@ -126,6 +126,20 @@ uvicorn app.main:app --reload
 ```
 
 L'API et la documentation Swagger sont accessibles à l'adresse : http://127.0.0.1:8000
+
+### 4.6 Erreur de login/mdp
+
+Si vous rencontrez une erreur de login ou de mot de passe, effectuez cette commande :
+```powershell
+python -c "from pwdlib import PasswordHash; print(PasswordHash.recommended().hash('secret'))"
+```
+
+Modifiez ensuite le fichier `app/roles/init_roles.py` pour utiliser le mot de passe hashé généré.
+
+Refaire la commande suivante :
+```powershell
+python -m app.roles.init_roles
+```
 
 ---
 

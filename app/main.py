@@ -127,7 +127,7 @@ def read_users_me(token_data: dict = Depends(get_current_user_token_data)):
 def get_books(db: Session = Depends(get_db), token_data: dict = Depends(get_current_user_token_data)):
     """Liste tous les livres en masquant le stock total si non-admin."""
     books = db.query(Book).all()
-    if "APP_ADMIN" not in [r.upper() for r in token_data.get("roles", [])]:
+    if "app_admin" not in [r.upper() for r in token_data.get("roles", [])]:
         for book in books: book.stockTot = 0
     return books
 
@@ -136,7 +136,7 @@ def get_book(book_id: int, db: Session = Depends(get_db), token_data: dict = Dep
     """Récupère un livre par son identifiant."""
     book = db.query(Book).filter(Book.id == book_id).first()
     if not book: raise HTTPException(status_code=404, detail="Livre non trouvé")
-    if "APP_ADMIN" not in [r.upper() for r in token_data.get("roles", [])]: book.stockTot = 0
+    if "app_admin" not in [r.upper() for r in token_data.get("roles", [])]: book.stockTot = 0
     return book
 
 @app.post("/books/", response_model=BookResponse, status_code=201, tags=["Books"], dependencies=[Depends(require_role("app_admin"))])
